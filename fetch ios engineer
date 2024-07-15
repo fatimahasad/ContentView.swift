@@ -1,0 +1,119 @@
+import SwiftUI
+
+// Models
+struct Meal: Identifiable, Codable {
+    let idMeal: String
+    let strMeal: String
+    let strMealThumb: String?
+}
+
+struct MealDetails: Codable {
+    let idMeal: String
+    let strMeal: String
+    let strInstructions: String
+    let strIngredient1: String?
+    let strMeasure1: String?
+    // Add other ingredients and measurements as needed
+}
+
+// Network Service
+class NetworkService {
+    static let shared = NetworkService()
+    
+    private init() {}
+    
+    func fetchMeals() async throws -> [Meal] {
+        let url = URL(string: "https://themealdb.com/api/json/v1/1/filter.php?c=Dessert")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let response = try JSONDecoder().decode([String: [Meal]].self, from: data)
+        return response["meals"]?.sorted(by: { $0.strMeal < $1.strMeal }) ?? []
+    }
+    
+    func fetchMealDetails(id: String) async throws -> MealDetails {
+        let url = URL(string: "https://themealdb.com/api/json/v1/1/lookup.php?i=\(id)")!
+        let (data, _) = try await URLSession.shared.data(from: url)
+        let response = try JSONDecoder().decode([String: [MealDetails]].self, from: data)
+        return response["meals"]?.first ?? MealDetails(idMeal: "", strMeal: "", strInstructions: "")
+    }
+}
+
+// Main View
+struct ContentView: View {
+    @State private var meals: [Meal] = []
+    @State private var isLoading = true
+    @State private var error: String?
+    
+    var body: some View {
+        NavigationView {
+            List(meals) { meal in
+                NavigationLink(destination: MealDetailView(meal: meal)) {
+                    Text(meal.strMeal)
+                }
+            }
+            .navigationTitle("Dessert Recipes")
+            .onAppear {
+                Task {
+                    do {
+                        meals = try await NetworkService.shared.fetchMeals()
+                        isLoading = false
+                    } catch {
+                        self.error = error.localizedDescription
+                        isLoading = false
+                    }
+                }
+            }
+        }
+        .overlay(
+            Group {
+                if isLoading {
+                    ProgressView("Loading…")
+                } else if let error = error {
+                    Text("Error: \(error)")
+                }
+            }
+        )
+    }
+}
+
+// Detail View
+struct MealDetailView: View {
+    let meal: Meal
+    @State private var mealDetails: MealDetails?
+    @State private var isLoading = true
+    @State private var error: String?
+    
+    var body: some View {
+        VStack {
+            if let mealDetails = mealDetails {
+                Text(mealDetails.strMeal)
+                    .font(.largeTitle)
+                    .padding()
+                Text(mealDetails.strInstructions)
+                    .padding()
+                // Add more details as needed
+            } else if isLoading {
+                ProgressView("Loading…")
+            } else if let error = error {
+                Text("Error: \(error)")
+            }
+        }
+        .onAppear {
+            Task {
+                do {
+                    mealDetails = try await NetworkService.shared.fetchMealDetails(id: meal.idMeal)
+                    isLoading = false
+                } catch {
+                    self.error = error.localizedDescription
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// Preview
+struct ContentView_Previews: PreviewProvider {
+    static var previews: some View {
+        ContentView()
+    }
+}
